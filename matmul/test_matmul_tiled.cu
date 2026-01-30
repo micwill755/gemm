@@ -3,7 +3,21 @@
 #include <stdio.h>
 #include <stdlib.h>
 
-extern "C" void matmul_tiled_kernel(const float* A, const float* B, float* C,
+/* extern "C" is a function declaration that tells the compiler:
+"This function is defined in another file, link to it later"
+
+Why needed?
+
+When you compile separately:
+test_matmul_tiled.cu compiles → needs to know matmul_tiled_cuda exists
+matmul_tiled.cu compiles → contains the actual implementation
+Linker connects them together
+
+Without extern:
+error: 'matmul_tiled_cuda' was not declared in this scope
+
+*/
+extern "C" void matmul_tiled_cuda(const float* A, const float* B, float* C,
                                    int M, int K, int N);
 
 int main() {
@@ -33,7 +47,7 @@ int main() {
     cudaMemcpy(d_B, h_B, size_B, cudaMemcpyHostToDevice);
     
     // Warmup
-    matmul_tiled_kernel(d_A, d_B, d_C, M, K, N);
+    matmul_tiled_cuda(d_A, d_B, d_C, M, K, N);
     
     // Benchmark
     cudaEvent_t start, stop;
@@ -41,7 +55,7 @@ int main() {
     cudaEventCreate(&stop);
     
     cudaEventRecord(start);
-    matmul_tiled_kernel(d_A, d_B, d_C, M, K, N);
+    matmul_tiled_cuda(d_A, d_B, d_C, M, K, N);
     cudaEventRecord(stop);
     cudaEventSynchronize(stop);
     
