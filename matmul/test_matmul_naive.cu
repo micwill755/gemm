@@ -6,6 +6,13 @@
 extern "C" void matmul_naive_cuda(const float* A, const float* B, float* C,
                                    int M, int K, int N);
 
+/*
+test_matmul_naive.cu (CPU)
+    ↓ calls
+matmul_naive_cuda() (CPU wrapper)
+    ↓ launches
+matmul_naive_kernel<<<>>> (GPU)
+*/
 int main() {
     int M = 1024, K = 1024, N = 1024;
     
