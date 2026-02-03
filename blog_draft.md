@@ -205,6 +205,54 @@ GEMM is heavily optimized in libraries like:
 - Slow (~400-800 cycles)
 - Where A, B, C live
 
+### Why Threads Need Independent Memory
+
+Each thread executes **different instructions** or the **same instruction on different data**:
+
+```cuda
+// Thread 0: row=0, col=0, sum=0.0, k=0
+// Thread 1: row=0, col=1, sum=0.0, k=0  
+// Thread 2: row=0, col=2, sum=0.0, k=0
+```
+
+Each thread needs its **own copy** of variables like `sum`, `row`, `col`, `k` because:
+- Thread 0's `sum` accumulates `C[0][0]`
+- Thread 1's `sum` accumulates `C[0][1]` 
+- Thread 2's `sum` accumulates `C[0][2]`
+
+If they shared the same `sum` variable, they'd overwrite each other!
+
+### Memory Access Flow
+
+```
+Thread 0 registers: sum=5.2, row=0, col=0
+                    ↑
+Thread 0 reads: shared_data[tid] → register
+                    ↑
+Shared memory: [1][2][3][4][5][6]...
+                    ↑
+All threads load: input[i] → shared_data[tid]
+                    ↑
+Global memory: [1][2][3][4][5][6][7][8]...
+```
+
+**The Connection:**
+- **Registers ↔ Shared Memory**: Threads read from shared memory **into their registers**
+- `sum += shared_data[tid + i]` loads `shared_data[tid + i]` into a register, adds to `sum` (also in register)
+
+**Why This Helps:**
+- **Without shared memory**: Each thread reads `input[i]` from slow global memory → register
+- **With shared memory**: Threads cooperatively load data once into fast shared memory, then each thread reads from shared memory → register
+
+**Key Insight:** Shared memory doesn't replace registers - it's a **staging area** between global memory and registers:
+
+```
+Global Memory → Shared Memory → Registers
+   (slow)         (fast)       (fastest)
+```
+
+Threads still need independent registers for their private variables (`sum`, `i`, `count`), but they can share commonly accessed data through shared memory to avoid redundant global memory reads.
+
 ---
 
 ## Naive CUDA Implementation
