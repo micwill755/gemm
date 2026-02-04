@@ -1,8 +1,8 @@
 #include <stdlib.h>
 #include <stdio.h>
 
-long* matmul(long *a, long *b, int m, int p, int n) {
-    long *c = malloc(m * n * sizeof(long));
+float* matmul(float *a, float *b, int m, int p, int n) {
+    float *c = malloc(m * n * sizeof(float));
 
     for (int i = 0; i < m; i++){
         for (int k = 0; k < p; k++) {
@@ -23,11 +23,13 @@ long* matmul(long *a, long *b, int m, int p, int n) {
     return c;
 }
 
+// test
+/*
 int main() {
     int m = 4, p = 3, n = 4;
 
-    long *a = malloc(m * p * sizeof(long));
-    long *b = malloc(p * n * sizeof(long));
+    float *a = malloc(m * p * sizeof(float));
+    float *b = malloc(p * n * sizeof(float));
 
     // init matrices with random
     for (int i = 0; i < m * p; i++) {
@@ -41,7 +43,7 @@ int main() {
     // print a and b
     for (int i = 0; i < m; i++) {
         for (int j = 0; j < p; j++) {
-            printf("%ld ", a[i * p + j]);
+            printf("%.2f ", a[i * p + j]);
         }
         printf("\n");
     }
@@ -50,21 +52,22 @@ int main() {
     // print a and b
     for (int i = 0; i < p; i++) {
         for (int j = 0; j < n; j++) {
-            printf("%ld ", b[i * n + j]);
+            printf("%.2f ", b[i * n + j]);
         }
         printf("\n");
     }
 
     
-    long *c = matmul(a, b, m, p, n);
+    float *c = matmul(a, b, m, p, n);
     // print matrix c
     printf("C: \n");
     for (int i = 0; i < m; i++) {
         for (int j = 0; j < n; j++) {
-            printf("%ld ", c[i * n + j]);
+            printf("%.2f ", c[i * n + j]);
         }
         printf("\n");
     }
 
     return 0;
 }
+*/
