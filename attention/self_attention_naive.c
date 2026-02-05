@@ -108,12 +108,12 @@ int main() {
 
     // Simple test input: 4 tokens, each with 4 features
     int size = seq_len * d_model;
-    float input[size] = {
-        1.0f, 2.0f, 3.0f, 4.0f,     // Token 1
-        5.0f, 6.0f, 7.0f, 8.0f,     // Token 2  
-        9.0f, 10.0f, 11.0f, 12.0f,  // Token 3
-        13.0f, 14.0f, 15.0f, 16.0f  // Token 4
-    };
+    int size = seq_len * d_model;
+    float *input = malloc(sizeof(float) * size);
+    for (int i = 0; i < size; i++) {
+        input[i] = (float)rand() / RAND_MAX * 10.0f; // Random values 0-10
+    }
+
 
     printf("Input:\n");
     for (int i = 0; i < 4; i++) {

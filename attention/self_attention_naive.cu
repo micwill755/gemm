@@ -61,3 +61,62 @@ extern "C" void self_attention_naive_cuda(
     cudaFree(d_scores);
     cudaFree(d_context);
 }
+
+int main() {
+    int seq_len = 4, d_model = 4;
+    int input_size = seq_len * d_model;
+    int weight_size = d_model * d_model;
+    
+    // Allocate host memory
+    float *h_x = (float*)malloc(input_size * sizeof(float));
+    float *h_Wq = (float*)malloc(weight_size * sizeof(float));
+    float *h_Wk = (float*)malloc(weight_size * sizeof(float));
+    float *h_Wv = (float*)malloc(weight_size * sizeof(float));
+    float *h_Wo = (float*)malloc(weight_size * sizeof(float));
+    float *h_output = (float*)malloc(input_size * sizeof(float));
+    
+    // Initialize with random values
+    srand(42);
+    for(int i = 0; i < input_size; i++) h_x[i] = (float)rand()/RAND_MAX;
+    for(int i = 0; i < weight_size; i++) {
+        h_Wq[i] = (float)rand()/RAND_MAX - 0.5f;
+        h_Wk[i] = (float)rand()/RAND_MAX - 0.5f;
+        h_Wv[i] = (float)rand()/RAND_MAX - 0.5f;
+        h_Wo[i] = (float)rand()/RAND_MAX - 0.5f;
+    }
+    
+    // Allocate GPU memory and copy data
+    float *d_x, *d_Wq, *d_Wk, *d_Wv, *d_Wo, *d_output;
+    cudaMalloc(&d_x, input_size * sizeof(float));
+    cudaMalloc(&d_Wq, weight_size * sizeof(float));
+    cudaMalloc(&d_Wk, weight_size * sizeof(float));
+    cudaMalloc(&d_Wv, weight_size * sizeof(float));
+    cudaMalloc(&d_Wo, weight_size * sizeof(float));
+    cudaMalloc(&d_output, input_size * sizeof(float));
+    
+    cudaMemcpy(d_x, h_x, input_size * sizeof(float), cudaMemcpyHostToDevice);
+    cudaMemcpy(d_Wq, h_Wq, weight_size * sizeof(float), cudaMemcpyHostToDevice);
+    cudaMemcpy(d_Wk, h_Wk, weight_size * sizeof(float), cudaMemcpyHostToDevice);
+    cudaMemcpy(d_Wv, h_Wv, weight_size * sizeof(float), cudaMemcpyHostToDevice);
+    cudaMemcpy(d_Wo, h_Wo, weight_size * sizeof(float), cudaMemcpyHostToDevice);
+    
+    // Run attention
+    self_attention_naive_cuda(d_x, d_Wq, d_Wk, d_Wv, d_Wo, d_output, seq_len, d_model);
+    
+    // Copy result back
+    cudaMemcpy(h_output, d_output, input_size * sizeof(float), cudaMemcpyDeviceToHost);
+    
+    printf("Self-attention output:\n");
+    for(int i = 0; i < seq_len; i++) {
+        for(int j = 0; j < d_model; j++) {
+            printf("%.3f ", h_output[i * d_model + j]);
+        }
+        printf("\n");
+    }
+    
+    // Cleanup
+    free(h_x); free(h_Wq); free(h_Wk); free(h_Wv); free(h_Wo); free(h_output);
+    cudaFree(d_x); cudaFree(d_Wq); cudaFree(d_Wk); cudaFree(d_Wv); cudaFree(d_Wo); cudaFree(d_output);
+    
+    return 0;
+}
