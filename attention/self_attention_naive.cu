@@ -1,5 +1,6 @@
 #include <cuda_runtime.h>
 #include <stdio.h>
+#include <time.h>
 
 // Forward declarations of your naive kernels
 extern "C" void matmul_naive_cuda(const float* A, const float* B, float* C, int M, int K, int N);
@@ -100,9 +101,28 @@ int main() {
     cudaMemcpy(d_Wv, h_Wv, weight_size * sizeof(float), cudaMemcpyHostToDevice);
     cudaMemcpy(d_Wo, h_Wo, weight_size * sizeof(float), cudaMemcpyHostToDevice);
     
-    // Run attention
+    // GPU timing using CUDA events (more accurate than CPU timers)
+    // Events mark points in the GPU execution stream
+    cudaEvent_t start, stop;
+    cudaEventCreate(&start);  // Create start timestamp marker
+    cudaEventCreate(&stop);   // Create stop timestamp marker
+    
+    // Record start event - places timestamp in GPU stream
+    cudaEventRecord(start);
+
+    // Run attention (all GPU kernels execute asynchronously)
     self_attention_naive_cuda(d_x, d_Wq, d_Wk, d_Wv, d_Wo, d_output, seq_len, d_model);
     
+    // Record stop event - places another timestamp in GPU stream
+    cudaEventRecord(stop);
+    // Wait for stop event to complete (ensures all kernels finished)
+    cudaEventSynchronize(stop);
+
+    // Calculate elapsed time between events on GPU
+    float milliseconds = 0;
+    cudaEventElapsedTime(&milliseconds, start, stop);
+    printf("GPU execution time: %.3f ms\n", milliseconds);
+
     // Copy result back
     cudaMemcpy(h_output, d_output, input_size * sizeof(float), cudaMemcpyDeviceToHost);
     
@@ -113,6 +133,10 @@ int main() {
         }
         printf("\n");
     }
+    
+    // Clean up event objects
+    cudaEventDestroy(start);
+    cudaEventDestroy(stop);
     
     // Cleanup
     free(h_x); free(h_Wq); free(h_Wk); free(h_Wv); free(h_Wo); free(h_output);
