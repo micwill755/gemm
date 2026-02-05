@@ -2,10 +2,11 @@
 #include <stdio.h>
 #include <time.h>
 
-// Forward declarations of your naive kernels
+// Forward declarations of kernels
 extern "C" void matmul_naive_cuda(const float* A, const float* B, float* C, int M, int K, int N);
 extern "C" void transpose_naive_cuda(float *input, float *output, int row, int col);
 extern "C" void softmax_naive_cuda(float *input, int rows, int cols);
+extern "C" void softmax_tiled_cuda(float *input, int rows, int cols);
 
 extern "C" void self_attention_naive_cuda(
     float* x,           // Input [seq_len × d_model]
@@ -63,6 +64,35 @@ extern "C" void self_attention_naive_cuda(
     cudaFree(d_context);
 }
 
+extern "C" void self_attention_tiled_cuda(
+    float* x, float* W_q, float* W_k, float* W_v, float* W_o, float* output,
+    int seq_len, int d_model
+) {
+    float *d_Q, *d_K, *d_V, *d_K_T, *d_scores, *d_context;
+    
+    cudaMalloc(&d_Q, seq_len * d_model * sizeof(float));
+    cudaMalloc(&d_K, seq_len * d_model * sizeof(float));
+    cudaMalloc(&d_V, seq_len * d_model * sizeof(float));
+    cudaMalloc(&d_K_T, d_model * seq_len * sizeof(float));
+    cudaMalloc(&d_scores, seq_len * seq_len * sizeof(float));
+    cudaMalloc(&d_context, seq_len * d_model * sizeof(float));
+    
+    matmul_naive_cuda(x, W_q, d_Q, seq_len, d_model, d_model);
+    matmul_naive_cuda(x, W_k, d_K, seq_len, d_model, d_model);
+    matmul_naive_cuda(x, W_v, d_V, seq_len, d_model, d_model);
+    transpose_naive_cuda(d_K, d_K_T, seq_len, d_model);
+    matmul_naive_cuda(d_Q, d_K_T, d_scores, seq_len, d_model, seq_len);
+    
+    // Use tiled softmax instead of naive
+    softmax_tiled_cuda(d_scores, seq_len, seq_len);
+    
+    matmul_naive_cuda(d_scores, d_V, d_context, seq_len, seq_len, d_model);
+    matmul_naive_cuda(d_context, W_o, output, seq_len, d_model, d_model);
+    
+    cudaFree(d_Q); cudaFree(d_K); cudaFree(d_V);
+    cudaFree(d_K_T); cudaFree(d_scores); cudaFree(d_context);
+}
+
 int main() {
     int seq_len = 4, d_model = 4;
     int input_size = seq_len * d_model;
@@ -107,21 +137,29 @@ int main() {
     cudaEventCreate(&start);  // Create start timestamp marker
     cudaEventCreate(&stop);   // Create stop timestamp marker
     
-    // Record start event - places timestamp in GPU stream
-    cudaEventRecord(start);
-
-    // Run attention (all GPU kernels execute asynchronously)
-    self_attention_naive_cuda(d_x, d_Wq, d_Wk, d_Wv, d_Wo, d_output, seq_len, d_model);
+    printf("=== Self-Attention Benchmark ===\n");
     
-    // Record stop event - places another timestamp in GPU stream
+    // Benchmark naive version
+    cudaEventRecord(start);
+    self_attention_naive_cuda(d_x, d_Wq, d_Wk, d_Wv, d_Wo, d_output, seq_len, d_model);
     cudaEventRecord(stop);
-    // Wait for stop event to complete (ensures all kernels finished)
     cudaEventSynchronize(stop);
-
-    // Calculate elapsed time between events on GPU
-    float milliseconds = 0;
-    cudaEventElapsedTime(&milliseconds, start, stop);
-    printf("GPU execution time: %.3f ms\n", milliseconds);
+    
+    float naive_time = 0;
+    cudaEventElapsedTime(&naive_time, start, stop);
+    printf("Naive softmax time: %.3f ms\n", naive_time);
+    
+    // Benchmark tiled version
+    cudaEventRecord(start);
+    self_attention_tiled_cuda(d_x, d_Wq, d_Wk, d_Wv, d_Wo, d_output, seq_len, d_model);
+    cudaEventRecord(stop);
+    cudaEventSynchronize(stop);
+    
+    float tiled_time = 0;
+    cudaEventElapsedTime(&tiled_time, start, stop);
+    printf("Tiled softmax time: %.3f ms\n", tiled_time);
+    
+    printf("Speedup: %.2fx\n", naive_time / tiled_time);
 
     // Copy result back
     cudaMemcpy(h_output, d_output, input_size * sizeof(float), cudaMemcpyDeviceToHost);
