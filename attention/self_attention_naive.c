@@ -52,7 +52,6 @@ SelfAttention* create_attention(int seq_len, int d_model) {
 
 float *self_attention_forward(SelfAttention *attn, float* x) {
     float* output = malloc(sizeof(float) * attn->seq_len * attn->d_model);
-
     float *query_w = matmul(x, attn->q, attn->seq_len, attn->d_model, attn->d_model);
     float *key_w = matmul(x, attn->k, attn->seq_len, attn->d_model, attn->d_model);
     float *value_w = matmul(x, attn->v, attn->seq_len, attn->d_model, attn->d_model);
@@ -95,7 +94,10 @@ int main() {
     // When you declare SelfAttention *attention, 
     // you're creating a pointer variable that will 
     // hold the memory address of a SelfAttention struct.
-    SelfAttention *attention = create_attention(4, 4);
+
+    int seq_len = 4;
+    int d_model = 4;
+    SelfAttention *attention = create_attention(seq_len, d_model);
 
     /*
     attention is a reference (pointer) to the memory location where your struct lives. 
@@ -105,7 +107,8 @@ int main() {
     */
 
     // Simple test input: 4 tokens, each with 4 features
-    float input[16] = {
+    int size = seq_len * d_model;
+    float input[size] = {
         1.0f, 2.0f, 3.0f, 4.0f,     // Token 1
         5.0f, 6.0f, 7.0f, 8.0f,     // Token 2  
         9.0f, 10.0f, 11.0f, 12.0f,  // Token 3
