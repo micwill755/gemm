@@ -105,8 +105,20 @@ extern "C" void self_attention_tiled_cuda(
     cudaFree(d_K_T); cudaFree(d_scores); cudaFree(d_context);
 }
 
-int main() {
+int main(int argc, char *argv[]) {
+    // Parse command line arguments
     int seq_len = 4, d_model = 4;
+    
+    if (argc == 3) {
+        seq_len = atoi(argv[1]);
+        d_model = atoi(argv[2]);
+    } else if (argc != 1) {
+        printf("Usage: %s [seq_len d_model]\n", argv[0]);
+        printf("Example: %s 128 512\n", argv[0]);
+        return 1;
+    }
+    
+    printf("Running attention benchmark with seq_len=%d, d_model=%d\n", seq_len, d_model);
     int input_size = seq_len * d_model;
     int weight_size = d_model * d_model;
     
@@ -263,9 +275,11 @@ int main() {
     // Copy result back
     cudaMemcpy(h_output, d_output, input_size * sizeof(float), cudaMemcpyDeviceToHost);
     
-    printf("Self-attention output:\n");
-    for(int i = 0; i < seq_len; i++) {
-        for(int j = 0; j < d_model; j++) {
+    printf("\nSelf-attention output (first 4x4 elements):\n");
+    int display_rows = seq_len < 4 ? seq_len : 4;
+    int display_cols = d_model < 4 ? d_model : 4;
+    for(int i = 0; i < display_rows; i++) {
+        for(int j = 0; j < display_cols; j++) {
             printf("%.3f ", h_output[i * d_model + j]);
         }
         printf("\n");
