@@ -8,6 +8,18 @@ extern "C" void transpose_naive_cuda(float *input, float *output, int row, int c
 extern "C" void softmax_naive_cuda(float *input, int rows, int cols);
 extern "C" void softmax_tiled_cuda(float *input, int rows, int cols);
 
+// Benchmark helper function
+void benchmark_kernel(const char* name, cudaEvent_t start, cudaEvent_t stop, void (*kernel_func)()) {
+    cudaEventRecord(start);
+    kernel_func();
+    cudaEventRecord(stop);
+    cudaEventSynchronize(stop);
+    
+    float time = 0;
+    cudaEventElapsedTime(&time, start, stop);
+    printf("%s: %.3f ms\n", name, time);
+}
+
 extern "C" void self_attention_naive_cuda(
     float* x,           // Input [seq_len × d_model]
     float* W_q,         // Query weights [d_model × d_model]  
@@ -137,7 +149,90 @@ int main() {
     cudaEventCreate(&start);  // Create start timestamp marker
     cudaEventCreate(&stop);   // Create stop timestamp marker
     
-    printf("=== Self-Attention Benchmark ===\n");
+    printf("=== Detailed Kernel Benchmarks ===\n");
+    
+    // Allocate intermediate results for individual benchmarking
+    float *d_Q, *d_K, *d_V, *d_K_T, *d_scores, *d_context;
+    cudaMalloc(&d_Q, seq_len * d_model * sizeof(float));
+    cudaMalloc(&d_K, seq_len * d_model * sizeof(float));
+    cudaMalloc(&d_V, seq_len * d_model * sizeof(float));
+    cudaMalloc(&d_K_T, d_model * seq_len * sizeof(float));
+    cudaMalloc(&d_scores, seq_len * seq_len * sizeof(float));
+    cudaMalloc(&d_context, seq_len * d_model * sizeof(float));
+    
+    // Benchmark individual kernels
+    printf("\n--- Individual Kernel Times ---\n");
+    
+    // MatMul QKV projections
+    cudaEventRecord(start);
+    matmul_naive_cuda(d_x, d_Wq, d_Q, seq_len, d_model, d_model);
+    matmul_naive_cuda(d_x, d_Wk, d_K, seq_len, d_model, d_model);
+    matmul_naive_cuda(d_x, d_Wv, d_V, seq_len, d_model, d_model);
+    cudaEventRecord(stop);
+    cudaEventSynchronize(stop);
+    float matmul_qkv_time = 0;
+    cudaEventElapsedTime(&matmul_qkv_time, start, stop);
+    printf("MatMul QKV projections: %.3f ms\n", matmul_qkv_time);
+    
+    // Transpose
+    cudaEventRecord(start);
+    transpose_naive_cuda(d_K, d_K_T, seq_len, d_model);
+    cudaEventRecord(stop);
+    cudaEventSynchronize(stop);
+    float transpose_time = 0;
+    cudaEventElapsedTime(&transpose_time, start, stop);
+    printf("Transpose: %.3f ms\n", transpose_time);
+    
+    // Attention scores MatMul
+    cudaEventRecord(start);
+    matmul_naive_cuda(d_Q, d_K_T, d_scores, seq_len, d_model, seq_len);
+    cudaEventRecord(stop);
+    cudaEventSynchronize(stop);
+    float matmul_scores_time = 0;
+    cudaEventElapsedTime(&matmul_scores_time, start, stop);
+    printf("Attention scores MatMul: %.3f ms\n", matmul_scores_time);
+    
+    // Softmax naive
+    cudaEventRecord(start);
+    softmax_naive_cuda(d_scores, seq_len, seq_len);
+    cudaEventRecord(stop);
+    cudaEventSynchronize(stop);
+    float softmax_naive_time = 0;
+    cudaEventElapsedTime(&softmax_naive_time, start, stop);
+    printf("Softmax (naive): %.3f ms\n", softmax_naive_time);
+    
+    // Reset scores for tiled softmax test
+    matmul_naive_cuda(d_Q, d_K_T, d_scores, seq_len, d_model, seq_len);
+    
+    // Softmax tiled
+    cudaEventRecord(start);
+    softmax_tiled_cuda(d_scores, seq_len, seq_len);
+    cudaEventRecord(stop);
+    cudaEventSynchronize(stop);
+    float softmax_tiled_time = 0;
+    cudaEventElapsedTime(&softmax_tiled_time, start, stop);
+    printf("Softmax (tiled): %.3f ms\n", softmax_tiled_time);
+    printf("Softmax speedup: %.2fx\n", softmax_naive_time / softmax_tiled_time);
+    
+    // Context MatMul
+    cudaEventRecord(start);
+    matmul_naive_cuda(d_scores, d_V, d_context, seq_len, seq_len, d_model);
+    cudaEventRecord(stop);
+    cudaEventSynchronize(stop);
+    float matmul_context_time = 0;
+    cudaEventElapsedTime(&matmul_context_time, start, stop);
+    printf("Context MatMul: %.3f ms\n", matmul_context_time);
+    
+    // Output projection MatMul
+    cudaEventRecord(start);
+    matmul_naive_cuda(d_context, d_Wo, d_output, seq_len, d_model, d_model);
+    cudaEventRecord(stop);
+    cudaEventSynchronize(stop);
+    float matmul_output_time = 0;
+    cudaEventElapsedTime(&matmul_output_time, start, stop);
+    printf("Output projection MatMul: %.3f ms\n", matmul_output_time);
+    
+    printf("\n--- Full Attention Benchmarks ---\n");
     
     // Benchmark naive version
     cudaEventRecord(start);
@@ -147,7 +242,7 @@ int main() {
     
     float naive_time = 0;
     cudaEventElapsedTime(&naive_time, start, stop);
-    printf("Naive softmax time: %.3f ms\n", naive_time);
+    printf("Full attention (naive): %.3f ms\n", naive_time);
     
     // Benchmark tiled version
     cudaEventRecord(start);
@@ -157,9 +252,13 @@ int main() {
     
     float tiled_time = 0;
     cudaEventElapsedTime(&tiled_time, start, stop);
-    printf("Tiled softmax time: %.3f ms\n", tiled_time);
+    printf("Full attention (tiled): %.3f ms\n", tiled_time);
     
-    printf("Speedup: %.2fx\n", naive_time / tiled_time);
+    printf("Full attention speedup: %.2fx\n", naive_time / tiled_time);
+    
+    // Cleanup intermediate allocations
+    cudaFree(d_Q); cudaFree(d_K); cudaFree(d_V);
+    cudaFree(d_K_T); cudaFree(d_scores); cudaFree(d_context);
 
     // Copy result back
     cudaMemcpy(h_output, d_output, input_size * sizeof(float), cudaMemcpyDeviceToHost);
