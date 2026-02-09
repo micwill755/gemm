@@ -1,6 +1,6 @@
 # Self-Attention CUDA Implementation Benchmark
 
-This benchmark compares naive vs tiled implementations of self-attention mechanism using optimized CUDA kernels.
+This benchmark compares naive vs tiled implementations of self-attention mechanism using optimized CUDA kernels to reducing global memory access to remove a common memory bottleneck.
 
 ## Implementation Details
 
