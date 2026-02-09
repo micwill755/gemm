@@ -3,7 +3,7 @@
 
 #define TILE_SIZE 16
 
-extern "C" void transpose_tiled_cuda(float *input, float *output, int rows, int cols);
+extern "C" void transpose_tiled_cuda(const float *input, float *output, int rows, int cols);
 
 __global__ void matmul_tiled_kernel(const float* A, const float* B_T, float* C, 
                                      int M, int K, int N) {
