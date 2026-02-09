@@ -41,6 +41,28 @@ __global__ void matmul_naive_kernel(const float* A, const float* B, float* C,
             All threads in a block reuse the same tile
             Reduces global memory accesses by ~16x (for 16×16 tiles)
         */
+        /*
+            Problem 2: Threads in a warp access memory with large strides, causing cache misses.
+            // Each thread accesses different stride patterns
+            A[row * K + k]     // Thread 0: A[0], A[1], A[2]...
+            B[k * N + col]     // Thread 0: B[0], B[N], B[2N]... 
+
+            Coalesced (Good):
+
+            Warp reads: A[0], A[1], A[2]... A[31]
+            Hardware fetches: 1 transaction (128 bytes) → serves all 32 threads
+
+            Uncoalesced (Bad)
+            Warp reads: B[0], B[N], B[2N]... B[31N]  (stride = N)
+            Hardware fetches: 32 separate transactions → 32x more memory traffic!
+
+            Cache Behavior
+            B[k * N + col]  // Thread 0: B[0], B[N], B[2N]...
+            Problem: Each B[k * N + col] access jumps by N elements (could be 1000s of bytes apart).
+
+            L1 cache line: Only 128 bytes
+            Stride too large: Each access misses cache → goes to slow global memory
+        */
         for (int k = 0; k < K; k++) {
             sum += A[row * K + k] * B[k * N + col];
         }
