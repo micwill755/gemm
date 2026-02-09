@@ -3,7 +3,7 @@
 
 // Forward declarations of tiled kernels
 extern "C" void matmul_coalesced_b_cuda(const float* A, const float* B, float* C, int M, int K, int N);
-extern "C" void transpose_tiled_cuda(float *input, float *output, int row, int col);
+extern "C" void transpose_tiled_cuda(const float *input, float *output, int row, int col);
 extern "C" void softmax_tiled_cuda(float *input, int rows, int cols);
 
 extern "C" void self_attention_tiled_cuda(

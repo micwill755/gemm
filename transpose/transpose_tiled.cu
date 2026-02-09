@@ -3,7 +3,7 @@
 
 #define TILE_SIZE 32
 
-__global__ void transpose_tiled_kernel(float *input, float *output, int rows, int cols) {
+__global__ void transpose_tiled_kernel(const float *input, float *output, int rows, int cols) {
     // Shared memory tile - add +1 to avoid bank conflicts
     __shared__ float tile[TILE_SIZE][TILE_SIZE + 1];
     
@@ -29,7 +29,7 @@ __global__ void transpose_tiled_kernel(float *input, float *output, int rows, in
     }
 }
 
-extern "C" void transpose_tiled_cuda(float *input, float *output, int rows, int cols) {
+extern "C" void transpose_tiled_cuda(const float *input, float *output, int rows, int cols) {
     dim3 blockSize(TILE_SIZE, TILE_SIZE);
     dim3 gridSize((cols + TILE_SIZE - 1) / TILE_SIZE, (rows + TILE_SIZE - 1) / TILE_SIZE);
     
