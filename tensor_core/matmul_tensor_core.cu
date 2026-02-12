@@ -1,14 +1,15 @@
 #include <cuda_runtime.h>
 #include <mma.h>
-#include <cuda_fp16.h>
+#include <cuda_bf16.h>
 
 using namespace nvcuda;
+using bfloat16 = __nv_bfloat16;
 
 #define WMMA_M 16
 #define WMMA_N 16  
 #define WMMA_K 16
 
-__global__ void matmul_tensor_core_kernel(const half* A, const half* B, float* C,
+__global__ void matmul_tensor_core_kernel(const bfloat16* A, const bfloat16* B, float* C,
                                          int M, int K, int N) {
     // Calculate warp position in the output matrix
     int warpM = blockIdx.y;
@@ -18,8 +19,8 @@ __global__ void matmul_tensor_core_kernel(const half* A, const half* B, float* C
     if (warpM * WMMA_M >= M || warpN * WMMA_N >= N) return;
     
     // Declare fragments for Tensor Core operations
-    wmma::fragment<wmma::matrix_a, WMMA_M, WMMA_N, WMMA_K, half, wmma::row_major> a_frag;
-    wmma::fragment<wmma::matrix_b, WMMA_M, WMMA_N, WMMA_K, half, wmma::col_major> b_frag;
+    wmma::fragment<wmma::matrix_a, WMMA_M, WMMA_N, WMMA_K, bfloat16, wmma::row_major> a_frag;
+    wmma::fragment<wmma::matrix_b, WMMA_M, WMMA_N, WMMA_K, bfloat16, wmma::col_major> b_frag;
     wmma::fragment<wmma::accumulator, WMMA_M, WMMA_N, WMMA_K, float> acc_frag;
     
     // Initialize accumulator to zero
@@ -52,27 +53,51 @@ __global__ void matmul_tensor_core_kernel(const half* A, const half* B, float* C
     }
 }
 
-// External conversion functions
-extern "C" void convert_fp32_to_fp16_cuda(const float* input, half* output, int size);
+__global__ void scale_output_kernel(float* matrix, float scale, int size) {
+    int idx = blockIdx.x * blockDim.x + threadIdx.x;
+    if (idx < size) {
+        matrix[idx] *= scale;
+    }
+}
+
+__global__ void fp32_to_bf16_kernel(const float* input, bfloat16* output, int size, float scale) {
+    int idx = blockIdx.x * blockDim.x + threadIdx.x;
+    if (idx < size) {
+        output[idx] = __float2bfloat16(input[idx] * scale);
+    }
+}
 
 extern "C" void matmul_tensor_core_cuda(const float* A_fp32, const float* B_fp32, float* C,
                                         int M, int K, int N) {
-    // Convert FP32 to FP16 for Tensor Core input
-    half *A_fp16, *B_fp16;
-    cudaMalloc(&A_fp16, M * K * sizeof(half));
-    cudaMalloc(&B_fp16, K * N * sizeof(half));
+    // Allocate BF16 matrices
+    bfloat16 *A_bf16, *B_bf16;
+    cudaMalloc(&A_bf16, M * K * sizeof(bfloat16));
+    cudaMalloc(&B_bf16, K * N * sizeof(bfloat16));
     
-    // Convert matrices to FP16
-    convert_fp32_to_fp16_cuda(A_fp32, A_fp16, M * K);
-    convert_fp32_to_fp16_cuda(B_fp32, B_fp16, K * N);
+    // Scale inputs to prevent overflow
+    float input_scale = 0.1f;
     
-    // Launch Tensor Core kernel - one block per 16x16 tile
-    dim3 blockDim(32, 1); // One warp per block
+    // Convert matrices to BF16 with scaling
+    int blockSize = 256;
+    int gridSize_A = (M * K + blockSize - 1) / blockSize;
+    int gridSize_B = (K * N + blockSize - 1) / blockSize;
+    
+    fp32_to_bf16_kernel<<<gridSize_A, blockSize>>>(A_fp32, A_bf16, M * K, input_scale);
+    fp32_to_bf16_kernel<<<gridSize_B, blockSize>>>(B_fp32, B_bf16, K * N, input_scale);
+    
+    // Launch Tensor Core kernel
+    dim3 blockDim(32, 1);
     dim3 gridDim((N + WMMA_N - 1) / WMMA_N, (M + WMMA_M - 1) / WMMA_M);
     
-    matmul_tensor_core_kernel<<<gridDim, blockDim>>>(A_fp16, B_fp16, C, M, K, N);
+    matmul_tensor_core_kernel<<<gridDim, blockDim>>>(A_bf16, B_bf16, C, M, K, N);
+    
+    // Scale output back up
+    float output_scale = 1.0f / (input_scale * input_scale);
+    int gridSize_C = (M * N + blockSize - 1) / blockSize;
+    
+    scale_output_kernel<<<gridSize_C, blockSize>>>(C, output_scale, M * N);
     cudaDeviceSynchronize();
     
-    cudaFree(A_fp16);
-    cudaFree(B_fp16);
+    cudaFree(A_bf16);
+    cudaFree(B_bf16);
 }
