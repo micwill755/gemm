@@ -7,6 +7,7 @@
 // External function declarations
 extern "C" void matmul_tiled_cuda(const float* A, const float* B, float* C, int M, int K, int N);
 extern "C" void matmul_tensor_core_cuda(const float* A, const float* B, float* C, int M, int K, int N);
+extern "C" void matmul_tensor_core_shared_cuda(const float* A, const float* B, float* C, int M, int K, int N);
 
 void init_matrix(float* matrix, int size) {
     for (int i = 0; i < size; i++) {
@@ -40,6 +41,7 @@ int main(int argc, char** argv) {
     float *h_B = (float*)malloc(K * N * sizeof(float));
     float *h_C_tiled = (float*)malloc(M * N * sizeof(float));
     float *h_C_tensor = (float*)malloc(M * N * sizeof(float));
+    float *h_C_shared = (float*)malloc(M * N * sizeof(float));
     
     // Initialize matrices
     srand(42);
@@ -47,11 +49,12 @@ int main(int argc, char** argv) {
     init_matrix(h_B, K * N);
     
     // Allocate device memory
-    float *d_A, *d_B, *d_C_tiled, *d_C_tensor;
+    float *d_A, *d_B, *d_C_tiled, *d_C_tensor, *d_C_shared;
     cudaMalloc(&d_A, M * K * sizeof(float));
     cudaMalloc(&d_B, K * N * sizeof(float));
     cudaMalloc(&d_C_tiled, M * N * sizeof(float));
     cudaMalloc(&d_C_tensor, M * N * sizeof(float));
+    cudaMalloc(&d_C_shared, M * N * sizeof(float));
     
     // Copy to device
     cudaMemcpy(d_A, h_A, M * K * sizeof(float), cudaMemcpyHostToDevice);
@@ -83,20 +86,35 @@ int main(int argc, char** argv) {
     cudaEventElapsedTime(&tensor_time, start, stop);
     printf("\\nTensor Core time: %.3f ms\\n", tensor_time);
     
+    // Benchmark Tensor Core Shared Memory implementation
+    printf("\\n=== Tensor Core Shared Memory Implementation ===");
+    cudaEventRecord(start);
+    matmul_tensor_core_shared_cuda(d_A, d_B, d_C_shared, M, K, N);
+    cudaEventRecord(stop);
+    cudaEventSynchronize(stop);
+    
+    float shared_time;
+    cudaEventElapsedTime(&shared_time, start, stop);
+    printf("\\nTensor Core Shared time: %.3f ms\\n", shared_time);
+    
     // Copy results back
     cudaMemcpy(h_C_tiled, d_C_tiled, M * N * sizeof(float), cudaMemcpyDeviceToHost);
     cudaMemcpy(h_C_tensor, d_C_tensor, M * N * sizeof(float), cudaMemcpyDeviceToHost);
+    cudaMemcpy(h_C_shared, d_C_shared, M * N * sizeof(float), cudaMemcpyDeviceToHost);
     
     // Compare results
-    float max_diff = compare_matrices(h_C_tiled, h_C_tensor, M * N);
+    float max_diff_tensor = compare_matrices(h_C_tiled, h_C_tensor, M * N);
+    float max_diff_shared = compare_matrices(h_C_tiled, h_C_shared, M * N);
     printf("\\n=== Results ===");
-    printf("\\nSpeedup: %.2fx\\n", tiled_time / tensor_time);
-    printf("Max difference: %.6f\\n", max_diff);
-    printf("Accuracy: %s\\n", max_diff < 1e-2 ? "PASS" : "FAIL");
+    printf("\\nTensor Core vs Tiled speedup: %.2fx\\n", tiled_time / tensor_time);
+    printf("Shared Memory vs Tiled speedup: %.2fx\\n", tiled_time / shared_time);
+    printf("Shared Memory vs Tensor Core speedup: %.2fx\\n", tensor_time / shared_time);
+    printf("\\nTensor Core max difference: %.6f (%s)\\n", max_diff_tensor, max_diff_tensor < 1e-2 ? "PASS" : "FAIL");
+    printf("Shared Memory max difference: %.6f (%s)\\n", max_diff_shared, max_diff_shared < 1e-2 ? "PASS" : "FAIL");
     
     // Cleanup
-    free(h_A); free(h_B); free(h_C_tiled); free(h_C_tensor);
-    cudaFree(d_A); cudaFree(d_B); cudaFree(d_C_tiled); cudaFree(d_C_tensor);
+    free(h_A); free(h_B); free(h_C_tiled); free(h_C_tensor); free(h_C_shared);
+    cudaFree(d_A); cudaFree(d_B); cudaFree(d_C_tiled); cudaFree(d_C_tensor); cudaFree(d_C_shared);
     cudaEventDestroy(start); cudaEventDestroy(stop);
     
     return 0;

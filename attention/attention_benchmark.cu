@@ -8,13 +8,14 @@ extern "C" void self_attention_naive_cuda(float* x, float* W_q, float* W_k, floa
 extern "C" void self_attention_tiled_cuda(float* x, float* W_q, float* W_k, float* W_v, float* W_o, float* output, int seq_len, int d_model);
 extern "C" void self_attention_coalesced_b_cuda(float* x, float* W_q, float* W_k, float* W_v, float* W_o, float* output, int seq_len, int d_model);
 extern "C" void self_attention_tensor_core_cuda(const float* input, const float* W_q, const float* W_k, const float* W_v, const float* W_o, float* output, int seq_len, int d_model);
+extern "C" void self_attention_tensor_core_shared_cuda(const float* input, const float* W_q, const float* W_k, const float* W_v, const float* W_o, float* output, int seq_len, int d_model);
 
 // Benchmark data structure
 typedef struct {
     float *h_x, *h_Wq, *h_Wk, *h_Wv, *h_Wo;
-    float *h_output_naive, *h_output_tiled, *h_output_coalesced, *h_output_tensor;
+    float *h_output_naive, *h_output_tiled, *h_output_coalesced, *h_output_tensor, *h_output_shared;
     float *d_x, *d_Wq, *d_Wk, *d_Wv, *d_Wo;
-    float *d_output_naive, *d_output_tiled, *d_output_coalesced, *d_output_tensor;
+    float *d_output_naive, *d_output_tiled, *d_output_coalesced, *d_output_tensor, *d_output_shared;
     cudaEvent_t start, stop;
 } BenchmarkData;
 
@@ -32,6 +33,7 @@ void initialize_data(BenchmarkData* data, int seq_len, int d_model) {
     data->h_output_tiled = (float*)malloc(input_size * sizeof(float));
     data->h_output_coalesced = (float*)malloc(input_size * sizeof(float));
     data->h_output_tensor = (float*)malloc(input_size * sizeof(float));
+    data->h_output_shared = (float*)malloc(input_size * sizeof(float));
     
     // Initialize with random values
     srand(42);
@@ -53,6 +55,7 @@ void initialize_data(BenchmarkData* data, int seq_len, int d_model) {
     cudaMalloc(&data->d_output_tiled, input_size * sizeof(float));
     cudaMalloc(&data->d_output_coalesced, input_size * sizeof(float));
     cudaMalloc(&data->d_output_tensor, input_size * sizeof(float));
+    cudaMalloc(&data->d_output_shared, input_size * sizeof(float));
     
     // Copy data to GPU
     cudaMemcpy(data->d_x, data->h_x, input_size * sizeof(float), cudaMemcpyHostToDevice);
@@ -92,11 +95,26 @@ float benchmark_tensor_core(BenchmarkData* data, int seq_len, int d_model) {
     return elapsed_time;
 }
 
-void print_speedups(float naive_time, float tiled_time, float coalesced_time, float tensor_time) {
+float benchmark_tensor_core_shared(BenchmarkData* data, int seq_len, int d_model) {
+    cudaEventRecord(data->start);
+    self_attention_tensor_core_shared_cuda(data->d_x, data->d_Wq, data->d_Wk, data->d_Wv, data->d_Wo, data->d_output_shared, seq_len, d_model);
+    cudaEventRecord(data->stop);
+    cudaEventSynchronize(data->stop);
+    
+    float elapsed_time;
+    cudaEventElapsedTime(&elapsed_time, data->start, data->stop);
+    printf("Tensor Core Shared attention: %.3f ms\n", elapsed_time);
+    return elapsed_time;
+}
+
+void print_speedups(float naive_time, float tiled_time, float coalesced_time, float tensor_time, float shared_time) {
     printf("\n=== Speedups vs Naive ===\n");
     printf("Tiled speedup: %.2fx\n", naive_time / tiled_time);
     printf("Coalesced B speedup: %.2fx\n", naive_time / coalesced_time);
     printf("Tensor Core speedup: %.2fx\n", naive_time / tensor_time);
+    printf("Tensor Core Shared speedup: %.2fx\n", naive_time / shared_time);
+    printf("\n=== Tensor Core Comparisons ===\n");
+    printf("Shared vs Basic Tensor Core speedup: %.2fx\n", tensor_time / shared_time);
 }
 
 void verify_correctness(BenchmarkData* data, int seq_len, int d_model) {
@@ -161,8 +179,9 @@ int main(int argc, char *argv[]) {
     float tiled_time = benchmark_implementation(&data, "Tiled", self_attention_tiled_cuda, data.d_output_tiled, seq_len, d_model);
     float coalesced_time = benchmark_implementation(&data, "Coalesced B", self_attention_coalesced_b_cuda, data.d_output_coalesced, seq_len, d_model);
     float tensor_time = benchmark_tensor_core(&data, seq_len, d_model);
+    float shared_time = benchmark_tensor_core_shared(&data, seq_len, d_model);
     
-    print_speedups(naive_time, tiled_time, coalesced_time, tensor_time);
+    print_speedups(naive_time, tiled_time, coalesced_time, tensor_time, shared_time);
     verify_correctness(&data, seq_len, d_model);
     cleanup_data(&data);
     
