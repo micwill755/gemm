@@ -17,24 +17,26 @@ This benchmark compares multiple implementations of self-attention mechanism usi
 
 | Seq Len | Model Dim | Naive (ms) | Tiled (ms) | Coalesced B (ms) | Tensor Core (ms) | TC Shared (ms) | Best Speedup |
 |---------|-----------|------------|------------|------------------|------------------|----------------|---------------|
-| 8192    | 6144      | 1761.8     | 886.0      | 1286.8          | 268.0           | 337.3          | **6.57x**     |
+| 2048    | 4096      | 166.5      | 88.0       | 117.5           | 34.8            | 34.8           | **4.78x**     |
+| 4096    | 5120      | 534.4      | 264.6      | 391.1           | 100.8           | 113.9          | **5.30x**     |
+| 8192    | 6144      | 1752.8     | 885.7      | 1287.0          | 270.8           | 270.8          | **6.47x**     |
 
 ### Speedup Analysis
 
-| Implementation      | 8192x6144 Speedup |
-|---------------------|-------------------|
-| Tiled               | **1.99x**         |
-| Coalesced B         | **1.37x**         |
-| Tensor Core         | **6.57x**         |
-| Tensor Core Shared  | **5.22x**         |
+| Implementation      | 2048x4096 | 4096x5120 | 8192x6144 | Avg Speedup |
+|---------------------|-----------|-----------|-----------|-------------|
+| Tiled               | 1.89x     | 2.02x     | 1.98x     | **1.96x**   |
+| Coalesced B         | 1.42x     | 1.37x     | 1.36x     | **1.38x**   |
+| Tensor Core         | 4.78x     | 5.30x     | 6.47x     | **5.52x**   |
+| Tensor Core Shared  | 4.78x     | 4.69x     | 6.47x     | **5.31x**   |
 
 ### Key Observations
 
-1. **Tensor Core dominance** - 6.57x speedup, best overall performance
-2. **Shared memory overhead** - TC Shared (5.22x) slower than basic TC due to sync costs
+1. **Tensor Core dominance** - Up to 6.47x speedup, best overall performance
+2. **TC Shared performance** - Matches basic TC at small/large scales, 11% slower at mid-scale
 3. **Perfect numerical accuracy** for Tiled and Coalesced B (0.000000 max difference)
-4. **Tensor Core trade-off** - Significant speedup but reduced precision (max diff: 2163.6)
-5. **Consistent tiled performance** - Reliable 2x speedup with perfect accuracy
+4. **Tensor Core accuracy** - Variable precision loss (0.0 to 1704.2 max diff) depending on scale
+5. **Consistent tiled performance** - Reliable ~2x speedup with perfect accuracy
 
 ## Usage
 
