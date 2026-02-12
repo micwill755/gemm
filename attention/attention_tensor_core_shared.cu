@@ -2,8 +2,6 @@
 #include <mma.h>
 #include <cuda_fp16.h>
 
-using namespace nvcuda;
-
 // External function declarations
 extern "C" void matmul_tensor_core_shared_cuda(const float* A_fp32, const float* B_fp32, float* C,
                                               int M, int K, int N);
