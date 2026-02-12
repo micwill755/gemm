@@ -5,7 +5,7 @@
 
 extern "C" void transpose_tiled_cuda(const float *input, float *output, int rows, int cols);
 
-__global__ void matmul_tiled_kernel(const float* A, const float* B_T, float* C, 
+__global__ void matmul_coalesced_b_kernel(const float* A, const float* B_T, float* C, 
                                      int M, int K, int N) {
     // Shared memory tiles for A and B
     __shared__ float As[TILE_SIZE][TILE_SIZE];
@@ -87,7 +87,7 @@ extern "C" void matmul_coalesced_b_cuda(const float* A, const float* B, float* C
     transpose_tiled_cuda(B, B_T, K, N);
     
     // 2. Run matrix multiplication with transposed B
-    matmul_tiled_kernel<<<gridDim, blockDim>>>(A, B_T, C, M, K, N);
+    matmul_coalesced_b_kernel<<<gridDim, blockDim>>>(A, B_T, C, M, K, N);
     cudaDeviceSynchronize();
     
     // 3. Clean up transposed matrix
