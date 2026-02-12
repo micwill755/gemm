@@ -4,9 +4,10 @@
 
 using namespace nvcuda;
 
-// External function from the shared memory tensor core matmul
+// External function declarations
 extern "C" void matmul_tensor_core_shared_cuda(const float* A_fp32, const float* B_fp32, float* C,
                                               int M, int K, int N);
+extern "C" void softmax_tiled_cuda(float* input, float* output, int rows, int cols);
 
 extern "C" void self_attention_tensor_core_shared_cuda(const float* input, const float* W_q, const float* W_k, 
                                                       const float* W_v, const float* W_o, float* output, 
@@ -33,7 +34,6 @@ extern "C" void self_attention_tensor_core_shared_cuda(const float* input, const
     matmul_tensor_core_shared_cuda(Q, K, scores, seq_len, d_model, seq_len);
     
     // Apply softmax to attention scores (reuse existing softmax kernel)
-    extern "C" void softmax_tiled_cuda(float* input, float* output, int rows, int cols);
     softmax_tiled_cuda(scores, scores, seq_len, seq_len);
     
     // Compute attention output: attn_output = scores * V using shared memory tensor cores
