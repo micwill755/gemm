@@ -10,19 +10,9 @@ using namespace nvcuda;
 #define BLOCK_SIZE_M 32  // 2 warps in M dimension
 #define BLOCK_SIZE_N 32  // 2 warps in N dimension
 
-__global__ void scale_output_kernel(float* matrix, float scale, int size) {
-    int idx = blockIdx.x * blockDim.x + threadIdx.x;
-    if (idx < size) {
-        matrix[idx] *= scale;
-    }
-}
-
-__global__ void fp32_to_fp16_kernel(const float* input, half* output, int size, float scale) {
-    int idx = blockIdx.x * blockDim.x + threadIdx.x;
-    if (idx < size) {
-        output[idx] = __float2half(input[idx] * scale);
-    }
-}
+// External kernel declarations
+__global__ void scale_output_kernel(float* matrix, float scale, int size);
+__global__ void fp32_to_fp16_kernel(const float* input, half* output, int size, float scale);
 
 __global__ void matmul_tensor_core_shared_kernel(const half* A, const half* B, float* C,
                                                 int M, int K, int N) {
